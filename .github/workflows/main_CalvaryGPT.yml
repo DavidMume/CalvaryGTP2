@@ -22,15 +22,15 @@ jobs:
     - name: Log in to registry
       uses: docker/login-action@v2
       with:
-        registry: https://calvarygtp.azurecr.io/
-        username: ${{ secrets.AzureAppService_ContainerUsername_524b0da5de4c4cf7896280a7e28b26e1 }}
-        password: ${{ secrets.AzureAppService_ContainerPassword_f657b227ce9c4b24abde2097d03272d3 }}
+        registry: https://6a0ec4d3-30cb-4a83-91c0-ae56bc0e3d26/
+        username: ${{ secrets.AzureAppService_ContainerUsername_52d88859a53d482f809392abc9626741 }}
+        password: ${{ secrets.AzureAppService_ContainerPassword_164bd087e7914dbbaaf8029497b1da4b }}
 
     - name: Build and push container image to registry
       uses: docker/build-push-action@v3
       with:
         push: true
-        tags: calvarygtp.azurecr.io/${{ secrets.AzureAppService_ContainerUsername_524b0da5de4c4cf7896280a7e28b26e1 }}/sample-app-aoai-chatgpt:${{ github.sha }}
+        tags: 6a0ec4d3-30cb-4a83-91c0-ae56bc0e3d26/${{ secrets.AzureAppService_ContainerUsername_52d88859a53d482f809392abc9626741 }}/sample-app-aoai-chatgpt:${{ github.sha }}
         file: ./Dockerfile
 
   deploy:
@@ -47,5 +47,5 @@ jobs:
       with:
         app-name: 'CalvaryGPT'
         slot-name: 'production'
-        publish-profile: ${{ secrets.AzureAppService_PublishProfile_5200cbadbe43444eaeb9dabe0a036e8f }}
-        images: 'calvarygtp.azurecr.io/${{ secrets.AzureAppService_ContainerUsername_524b0da5de4c4cf7896280a7e28b26e1 }}/sample-app-aoai-chatgpt:${{ github.sha }}'
+        publish-profile: ${{ secrets.AzureAppService_PublishProfile_07c1d1f135d24df29bf243bd7be2c9ac }}
+        images: '6a0ec4d3-30cb-4a83-91c0-ae56bc0e3d26/${{ secrets.AzureAppService_ContainerUsername_52d88859a53d482f809392abc9626741 }}/sample-app-aoai-chatgpt:${{ github.sha }}'
