@@ -571,6 +571,12 @@ If you are using VSCode, you can add the following settings to your `settings.js
 }
 ```
 
+## Running tests
+
+```bash
+pytest
+```
+
 ## Trademarks
 
 This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 

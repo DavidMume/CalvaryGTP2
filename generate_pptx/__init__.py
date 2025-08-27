@@ -2,28 +2,35 @@ import base64
 import io
 import json
 import logging
-from typing import Any, Dict, List
+import os
+import uuid
+from typing import List
 
 import azure.functions as func
 from pptx import Presentation
 from pptx.util import Pt
+
+from .models import PresentationRequest, Slide
 
 logger = logging.getLogger("generate_pptx")
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
-def build_pptx(slides: List[Dict[str, Any]], style: str) -> bytes:
-    """Build a PowerPoint presentation.
+def _load_base_presentation() -> Presentation:
+    """Load a base presentation from BRAND_TEMPLATE_PATH if available."""
+    template_path = os.getenv("BRAND_TEMPLATE_PATH")
+    if template_path and os.path.exists(template_path):
+        try:
+            return Presentation(template_path)
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("Failed to load template", extra={"template": template_path})
+    return Presentation()
 
-    Args:
-        slides: List of slide definitions containing title and bullets.
-        style: Styling keyword affecting font sizes.
 
-    Returns:
-        Bytes of the generated PPTX file.
-    """
-    prs = Presentation()
+def build_pptx(slides: List[Slide], style: str) -> bytes:
+    """Build a PowerPoint presentation."""
+    prs = _load_base_presentation()
     layout = prs.slide_layouts[1]
 
     style_fonts = {
@@ -38,13 +45,12 @@ def build_pptx(slides: List[Dict[str, Any]], style: str) -> bytes:
         title_placeholder = sld.shapes.title
         content = sld.placeholders[1]
 
-        title_placeholder.text = slide.get("title", "")
+        title_placeholder.text = slide.title
         title_placeholder.text_frame.paragraphs[0].font.size = title_size
 
         tf = content.text_frame
         tf.clear()
-        bullets = slide.get("bullets", [])
-        for bullet in bullets:
+        for bullet in slide.bullets:
             p = tf.add_paragraph()
             p.text = bullet
             p.font.size = bullet_size
@@ -59,62 +65,39 @@ def build_pptx(slides: List[Dict[str, Any]], style: str) -> bytes:
 @app.route(route="generate-pptx", methods=["POST"])
 def generate_pptx(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP trigger to generate a PPTX file based on JSON payload."""
+    request_id = req.headers.get("x-request-id", str(uuid.uuid4()))
+
+    body = req.get_body()
+    if len(body) > 1_000_000:  # 1 MB limit
+        logger.warning("Payload too large", extra={"request_id": request_id})
+        return func.HttpResponse(
+            json.dumps({"error": "Payload too large"}),
+            status_code=413,
+            mimetype="application/json",
+        )
+
     try:
-        data = req.get_json()
-    except ValueError:
-        logger.warning("Invalid JSON payload")
+        payload = PresentationRequest.model_validate_json(body)
+    except Exception as exc:  # pydantic ValidationError
+        logger.warning("Validation error", extra={"request_id": request_id})
         return func.HttpResponse(
-            json.dumps({"error": "Invalid JSON"}),
+            json.dumps({"error": "Invalid payload", "details": getattr(exc, "errors", lambda: [])()}),
             status_code=400,
             mimetype="application/json",
         )
 
-    slides = data.get("slides")
-    if not isinstance(slides, list) or not slides:
-        logger.warning("Missing or invalid 'slides'")
-        return func.HttpResponse(
-            json.dumps({"error": "Invalid or missing 'slides'"}),
-            status_code=400,
-            mimetype="application/json",
-        )
-
-    for slide in slides:
-        if not isinstance(slide, dict):
-            logger.warning("Slide entry is not a dict")
-            return func.HttpResponse(
-                json.dumps({"error": "Invalid slide format"}),
-                status_code=400,
-                mimetype="application/json",
-            )
-        if not isinstance(slide.get("title"), str) or not isinstance(slide.get("bullets"), list):
-            logger.warning("Slide missing title or bullets")
-            return func.HttpResponse(
-                json.dumps({"error": "Invalid slide structure"}),
-                status_code=400,
-                mimetype="application/json",
-            )
-        if any(not isinstance(b, str) for b in slide["bullets"]):
-            logger.warning("Bullet is not a string")
-            return func.HttpResponse(
-                json.dumps({"error": "Invalid bullet format"}),
-                status_code=400,
-                mimetype="application/json",
-            )
-
-    style = data.get("style", "minimalist")
-    file_name = data.get("fileName", "presentation.pptx")
-
-    pptx_bytes = build_pptx(slides, style)
+    pptx_bytes = build_pptx(payload.slides, payload.style)
     pptx_b64 = base64.b64encode(pptx_bytes).decode("utf-8")
 
     logger.info(
-        "Generated PPTX", extra={"slide_count": len(slides), "style": style}
+        "Generated PPTX",
+        extra={"request_id": request_id, "slideCount": len(payload.slides)},
     )
 
     response = {
         "status": "ok",
-        "fileName": file_name,
-        "slideCount": len(slides),
+        "fileName": payload.fileName,
+        "slideCount": len(payload.slides),
         "pptxBase64": pptx_b64,
     }
     return func.HttpResponse(
